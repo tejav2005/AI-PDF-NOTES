@@ -14,6 +14,8 @@ import {
   Volume2,
   VolumeX,
   Network,
+  ShieldCheck,
+  Shield,
 } from "lucide-react";
 import { AlignLeft, AlignCenter, AlignRight, AlignJustify } from "lucide-react";
 import { useAction, useMutation } from "convex/react";
@@ -23,12 +25,15 @@ import { chatSession } from "@/configs/AIModel";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import DiagramModal from "./DiagramModal";
+import { usePrivacy } from "@/components/SolanaProvider";
+import { encrypt, decrypt } from "@/lib/encryption";
 
 function EditiorExtension({ editor }) {
   const { fileId } = useParams();
   const SearchAI = useAction(api.myAction.search);
   const saveNotes = useMutation(api.notes.AddNotes);
   const { user } = useUser();
+  const { aesKey, isPrivacyActive } = usePrivacy();
   const [update, setUpdate] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -102,6 +107,18 @@ function EditiorExtension({ editor }) {
     setIsSpeaking(false);
   };
 
+  // ── Helper: Save notes (with optional encryption) ───────────────────────────
+  const saveNotesEncrypted = async (htmlContent) => {
+    const email = user?.primaryEmailAddress?.emailAddress;
+    if (!email || !fileId) return;
+
+    let contentToSave = htmlContent;
+    if (isPrivacyActive && aesKey) {
+      contentToSave = await encrypt(htmlContent, aesKey);
+    }
+    await saveNotes({ notes: contentToSave, fileId, createdBy: email });
+  };
+
   // ── Auto-Save ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!editor) return;
@@ -112,12 +129,9 @@ function EditiorExtension({ editor }) {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         const content = editor.getHTML();
-        const email = user?.primaryEmailAddress?.emailAddress;
-        if (content && fileId && email) {
+        if (content && fileId) {
           setIsSaving(true);
-          saveNotes({ notes: content, fileId, createdBy: email }).finally(
-            () => setIsSaving(false)
-          );
+          saveNotesEncrypted(content).finally(() => setIsSaving(false));
         }
       }, 2000);
     };
@@ -129,7 +143,7 @@ function EditiorExtension({ editor }) {
       editor.off("update", handler);
       editor.off("selectionUpdate", handler);
     };
-  }, [editor, fileId, saveNotes, user]);
+  }, [editor, fileId, saveNotes, user, aesKey, isPrivacyActive]);
 
   // ── AI Answer ────────────────────────────────────────────────────────────────
   const onAiClick = async () => {
@@ -145,10 +159,25 @@ function EditiorExtension({ editor }) {
       const result = await SearchAI({ query: selectedText, fileId });
       const UnformattedAns = JSON.parse(result);
       let AllUnformattedAns = "";
-      UnformattedAns &&
-        UnformattedAns.forEach((item) => {
-          AllUnformattedAns += item.pageContent;
-        });
+
+      if (UnformattedAns && UnformattedAns.length > 0) {
+        for (const item of UnformattedAns) {
+          let chunkText = item.pageContent;
+
+          // If privacy is active, the stored text may be encrypted.
+          // Try to decrypt it.
+          if (isPrivacyActive && aesKey) {
+            try {
+              chunkText = await decrypt(chunkText, aesKey);
+            } catch {
+              // If decryption fails, the chunk may have been stored in
+              // plaintext (before privacy was enabled). Use as-is.
+            }
+          }
+
+          AllUnformattedAns += chunkText;
+        }
+      }
 
       const PROMT =
         "For question :" +
@@ -170,10 +199,7 @@ function EditiorExtension({ editor }) {
         AllText + "<p> <strong>Answer: </strong>" + FinalAns + " </p>"
       );
 
-      const email = user?.primaryEmailAddress?.emailAddress;
-      if (email) {
-        saveNotes({ notes: editor.getHTML(), fileId, createdBy: email });
-      }
+      await saveNotesEncrypted(editor.getHTML());
     } catch (error) {
       toast.error("Failed to fetch AI answer");
       console.error(error);
@@ -193,6 +219,17 @@ function EditiorExtension({ editor }) {
               <div className="text-xs text-gray-500 flex items-center gap-1">
                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
                 Saving...
+              </div>
+            )}
+
+            {/* Privacy indicator (inline) */}
+            {isPrivacyActive ? (
+              <div className="text-xs text-green-600 flex items-center gap-1" title="Notes are E2E encrypted">
+                <ShieldCheck className="w-3.5 h-3.5" />
+              </div>
+            ) : (
+              <div className="text-xs text-gray-400 flex items-center gap-1" title="Connect wallet for E2E encryption">
+                <Shield className="w-3.5 h-3.5" />
               </div>
             )}
 
