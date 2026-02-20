@@ -27,18 +27,23 @@ export default function DiagramModal({ selectedText, onClose }) {
         setStatus("generating");
         setErrorMsg("");
         try {
-            const prompt = `You are a diagram generator. Based ONLY on the following text (do not use any external knowledge), generate the most appropriate Mermaid diagram.
+            const prompt = `You are a Mermaid.js diagram generator.
+Based ONLY on the text below, generate a valid Mermaid diagram.
 
-Choose the best type:
-- Use "mindmap" for topics, concepts, or definitions
-- Use "flowchart TD" for processes, steps, or instructions
-- Use "sequenceDiagram" for interactions or events
-- Use "graph LR" for relationships between items
+Preferred Type: "mindmap"
+(Use "flowchart TD" only if the text describes a strict sequential process/steps).
 
-Rules:
-1. Return ONLY the raw Mermaid code — no markdown code fences, no backticks, no explanation.
-2. Keep it concise and readable (max 20 nodes).
-3. Use short, meaningful labels.
+CRITICAL SYNTAX RULES for "mindmap":
+1. The first line must be exactly "mindmap".
+2. EVERY node label MUST be wrapped in double quotes. Example: root("Root Name")
+3. Use indentation (2 spaces) to show hierarchy.
+4. Do NOT use parentheses () or brackets [] inside labels unless they are inside double quotes.
+
+General Rules:
+1. Return ONLY the raw Mermaid code. 
+2. No markdown fences, no backticks, no explanations.
+3. Maximum 15-20 nodes.
+4. If a word contains special characters like ( ) , . - / , it MUST be in double quotes.
 
 Text to visualize:
 """

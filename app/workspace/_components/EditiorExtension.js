@@ -378,7 +378,7 @@ function EditiorExtension({ editor }) {
             <button
               onClick={onDiagramClick}
               className="hover:text-green-500 transition-colors"
-              title="Visualize selection as diagram"
+              title="Generate Mind Map"
             >
               <Network />
             </button>

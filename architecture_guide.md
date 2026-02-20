@@ -27,7 +27,7 @@ The application follows a modern serverless architecture:
 The application implements **End-to-End Encryption (E2EE)** using a decentralized approach.
 
 ### The Privacy Flow:
-1. **Key Derivation**: When a user connects their **Solana Wallet**, they sign a static message. This signature is hashed using SHA-256 to create a deterministic **256-bit AES key**. 
+1. **Key Derivation**: When a user connects their **Solana Wallet**, they sign a static message. This signature is passed through **Argon2id** (a memory-hard hashing function) to create a deterministic, fixed-length **256-bit AES key**. 
    - *Crucially, this key is only known to the user's browser.*
 2. **Client-Side Processing**: PDFs are parsed *locally* in the browser using `pdfjs-dist`. The raw text never leaves the device in plaintext if privacy is enabled.
 3. **Encryption**: Before being sent to the database (Convex), text chunks and user notes are encrypted using **AES-256-GCM**.
