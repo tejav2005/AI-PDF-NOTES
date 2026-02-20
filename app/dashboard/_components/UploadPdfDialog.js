@@ -69,14 +69,30 @@ function UploadPdfDialog({ children, isMaxFile }) {
   const [fileName, setFileName] = useState("");
   const [open, setOpen] = useState(false);
 
+  const resetState = () => {
+    setFile(null);
+    setFileName("");
+    setLoading(false);
+  };
+
+  const handleOpenChange = (val) => {
+    if (!loading) {
+      setOpen(val);
+      if (!val) resetState();
+    }
+  };
+
   const OnFileSelect = (event) => {
     setFile(event.target.files[0]);
   };
 
   const OnUpload = async () => {
     setLoading(true);
+
+    // ── Phase 1: Upload PDF to storage & save DB record ───────────────────────
+    // The dialog closes as soon as this succeeds. Embedding runs afterwards.
+    let fileId;
     try {
-      // ── 1. Upload the raw PDF to Convex storage (for the viewer) ────────
       const postUrl = await generateUploadUrl();
       const result = await fetch(postUrl, {
         method: "POST",
@@ -84,7 +100,7 @@ function UploadPdfDialog({ children, isMaxFile }) {
         body: file,
       });
       const { storageId } = await result.json();
-      const fileId = uuid4();
+      fileId = uuid4();
       const fileUrl = await getFileUrl({ storageId });
 
       await addFileEntry({
@@ -95,46 +111,47 @@ function UploadPdfDialog({ children, isMaxFile }) {
         createdBy: user?.primaryEmailAddress?.emailAddress,
       });
 
-      // ── 2. Parse PDF in browser (privacy: raw text never leaves device) ─
-      toast("Parsing PDF locally...");
+      // File is saved — close the dialog right away
+      toast.success("File uploaded! Processing embeddings in background…");
+      resetState();
+      setOpen(false);
+    } catch (err) {
+      console.error("Upload error:", err);
+      toast.error("Upload failed: " + err.message);
+      setLoading(false);
+      return; // stop here; don't attempt embedding
+    }
+
+    // ── Phase 2: Parse PDF & ingest into vector store (background) ────────────
+    // Dialog is already closed. Any error here won't affect the user's file.
+    try {
+      toast("Parsing PDF and generating embeddings…");
       const fullText = await parsePdfInBrowser(file);
       const chunks = splitText(fullText, 100, 20);
 
-      // ── 3. If privacy is active, encrypt chunks before storing ──────────
       let chunksToStore = chunks;
       if (isPrivacyActive && aesKey) {
-        toast("Encrypting chunks with your wallet key...");
         chunksToStore = await Promise.all(
           chunks.map((chunk) => encrypt(chunk, aesKey))
         );
       }
 
-      // ── 4. Ingest into Convex vector store ──────────────────────────────
-      // We send the ORIGINAL (plaintext) chunks for embedding generation
-      // but store the encrypted text alongside the embedding.
-      // The myAction.ingest will need both: plaintext for embedding,
-      // encrypted for storage.
-      await embeddDocument({
-        splitText: chunksToStore,
-        fileId,
-      });
+      await embeddDocument({ splitText: chunksToStore, fileId });
 
-      setLoading(false);
-      setOpen(false);
-      toast(
+      toast.success(
         isPrivacyActive
           ? "File is ready — encrypted with your wallet key! 🔒"
-          : "File is ready!"
+          : "File is ready! AI search is now active."
       );
     } catch (err) {
-      console.error("Upload error:", err);
-      toast.error("Upload failed: " + err.message);
-      setLoading(false);
+      console.error("Embedding error (file is still saved):", err);
+      toast.error("AI search unavailable for this file. The file was saved successfully.");
     }
   };
 
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button onClick={() => setOpen(true)} disabled={isMaxFile} className="w-full">
           + Upload PDF File

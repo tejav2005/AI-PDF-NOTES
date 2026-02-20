@@ -73,7 +73,7 @@ function WorkspaceHeader({ fileName }) {
         </div>
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 via-blue-800 to-indigo-800 bg-clip-text text-transparent">
-            PDF AI Notes
+            FocusFlow
           </h1>
           <p className="text-sm text-indigo-600 font-semibold">Document Workspace</p>
         </div>
