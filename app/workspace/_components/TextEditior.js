@@ -1,79 +1,20 @@
-// import { Placeholder } from '@tiptap/extensions'
-// import { EditorContent, useEditor } from '@tiptap/react'
-// import StarterKit from '@tiptap/starter-kit'
-// import React, { useEffect } from 'react'
-// import EditiorExtension from './EditiorExtension'
-// import Highlight from '@tiptap/extension-highlight'
-// import TextAlign from '@tiptap/extension-text-align';
-// import { useQuery } from 'convex/react'
-// import { api } from '@/convex/_generated/api'
-
-
-// function TextEditior({fileId}) {
-
-//     const notes=useQuery(api.notes.GetNotes,{
-//         fileId:fileId
-//     })
-//     console.log(notes);
-
-//      const editor = useEditor({
-//     extensions: [StarterKit,
-//         Placeholder.configure({
-//             placeholder:'Start Taking your notes here...'
-//         }),
-//         Highlight.configure({
-//             multicolor: true
-//         }),
-//         TextAlign.configure({
-//             types:['heading', 'paragraph'],
-//         })
-//     ],
-    
-//     editorProps:{
-//         attributes:{
-//             class:'focus:outline-none h-screen p-5'
-//         }
-//     },
-//     // Don't render immediately on the server to avoid SSR issues
-//     immediatelyRender: false,
-//   })
-
-//   useEffect(()=>{
-//     editor&&editor.commands.setContent(notes)
-//   },[notes&&editor])
-
-  
-//   return (
-//     <div>
-//         <EditiorExtension editor={editor}/>
-//         <div className='overflow-scroll h-[88vh'>
-//             <EditorContent editor={editor} />
-//         </div>
-//     </div>
-//   )
-// }
-
-// export default TextEditior
-
-
-
-
-
-// use this code below
-
 "use client"
 import { Placeholder } from '@tiptap/extensions'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import EditiorExtension from './EditiorExtension'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import { usePrivacy } from '@/components/SolanaProvider'
+import { decrypt } from '@/lib/encryption'
 
 function TextEditior({ fileId }) {
   const notes = useQuery(api.notes.GetNotes, { fileId })
+  const { aesKey, isPrivacyActive } = usePrivacy()
+  const [decryptedNotes, setDecryptedNotes] = useState(null)
 
   const editor = useEditor({
     extensions: [
@@ -90,11 +31,35 @@ function TextEditior({ fileId }) {
     immediatelyRender: false,
   })
 
+  // Decrypt notes when they arrive from Convex
   useEffect(() => {
-    if (editor && notes) {
-      editor.commands.setContent(notes)
+    if (notes === undefined || notes === null) {
+      setDecryptedNotes(null)
+      return
     }
-  }, [notes, editor])
+
+    const tryDecrypt = async () => {
+      if (isPrivacyActive && aesKey && typeof notes === 'string') {
+        try {
+          const plain = await decrypt(notes, aesKey)
+          setDecryptedNotes(plain)
+        } catch {
+          // Decryption failed — notes may be in plaintext (pre-encryption)
+          setDecryptedNotes(notes)
+        }
+      } else {
+        setDecryptedNotes(notes)
+      }
+    }
+    tryDecrypt()
+  }, [notes, aesKey, isPrivacyActive])
+
+  // Push decrypted notes into the editor
+  useEffect(() => {
+    if (editor && decryptedNotes) {
+      editor.commands.setContent(decryptedNotes)
+    }
+  }, [decryptedNotes, editor])
 
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-xl border border-gray-200/50 h-full flex flex-col">
@@ -110,8 +75,6 @@ function TextEditior({ fileId }) {
 }
 
 export default TextEditior
-
-
 
 
 

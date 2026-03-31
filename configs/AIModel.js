@@ -1,9 +1,4 @@
-const{
-    GoogleGenerativeAi,
-    HarmCategory,
-    HarmBlockThreshold,
-    GoogleGenerativeAI,
-} = require("@google/generative-ai");
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
 const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -20,12 +15,7 @@ const generationConfig = {
     responseMimeType: "text/plain",
 };
 
-   export const chatSession = model.startChat({
-        generationConfig,
-        history: [
-
-        ],
-    });
-
-    // const result = await chatSession.sendMessage("INSERT_INPUT_HERE");
-    // console.log(result.response.text());
+export const chatSession = model.startChat({
+    generationConfig,
+    history: [],
+});

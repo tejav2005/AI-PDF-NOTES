@@ -1,130 +1,3 @@
-// "use client"
-// import React, { useState } from 'react'
-// import {
-//   Dialog,
-//   DialogContent,
-//   DialogDescription,
-//   DialogFooter,
-//   DialogHeader,
-//   DialogTitle,
-//   DialogTrigger,
-// } from "@/components/ui/dialog"
-// import { Input } from '@/components/ui/input'
-// import { DialogClose } from '@radix-ui/react-dialog'
-// import { Button } from '@/components/ui/button'
-// import { useAction, useMutation } from 'convex/react'
-// import { Loader2Icon } from 'lucide-react'
-// import { api } from '@/convex/_generated/api'
-// import uuid4 from 'uuid4'
-// import { useUser } from '@clerk/nextjs'
-// import axios from 'axios'
-// import { toast } from 'sonner'
-
-
-// function UploadPdfDialog({children,isMaxFile}) {
-
-//   const generateUploadUrl=useMutation(api.fileStorage.generateUploadUrl);
-//   const addFileEntry=useMutation(api.fileStorage.AddFileEntryToDb);
-//   const getFileUrl=useMutation(api.fileStorage.getFileUrl);
-//   const embeddDocument=useAction(api.myAction.ingest)
-//   const {user}=useUser();
-//   const [file,setFile] = useState();
-//   const [loading,setLoading] = useState(false);
-//   const [fileName,setFileName]=useState();
-//   const [open,setOpen]=useState(false);
-
-//   const OnFileSelect=(event)=>{
-//       setFile(event.target.files[0]);
-//   }
-
-//   const OnUpload=async()=>{
-//     setLoading(true);
-
-//      // Step 1: Get a short-lived upload URL
-//     const postUrl = await generateUploadUrl();
-
-//      // Step 2: POST the file to the URL
-//     const result = await fetch(postUrl, {
-//       method: "POST",
-//       headers: { "Content-Type": file?.type },
-//       body: file,
-//     });
-//     const { storageId } = await result.json();
-//     console.log('StorageId',storageId);
-//     const fileId= uuid4();
-//     const fileUrl=await getFileUrl({storageId:storageId})
-//     // Step 3: Save the newly allocated storage id to the database
-      
-
-//     const resp=await addFileEntry({
-//       fileId:fileId,
-//       storageId:storageId,
-//       fileName:fileName??'Untitled File',
-//       fileUrl:fileUrl,
-//       createdBy:user?.primaryEmailAddress?.emailAddress
-//     })
-
-//     // console.log(resp);
-
-//     //API Call to Fetch PDF Process Data
-//     const ApiResp=await axios.get('/api/pdf-loader?pdfUrl='+fileUrl);
-//     console.log(ApiResp.data.result);
-//     await embeddDocument({
-//        splitText:ApiResp.data.result,
-//        fileId: fileId
-//     });
-//     //console.log(embdeddResult)
-//     setLoading(false);
-//     setOpen(false);
-
-//     toast('File is ready !')
- 
-//   }
-//   return (
-//    <Dialog open={open}>
-//   <DialogTrigger asChild>
-//     <Button onClick={()=>setOpen(true)} disabled={isMaxFile} className="w-full">+ Upload PDF File</Button>
-//   </DialogTrigger>
-//   <DialogContent>
-//     <DialogHeader>
-//       <DialogTitle>Upload Pdf File</DialogTitle>
-//       <DialogDescription asChild>
-//         <div className=''>
-//           <h2 className='mt-5'>Select a file to Upload</h2>
-//           <div className=' gap-2 p-3 rounded-md border'>
-            
-//             <input type='file' accept='application/pdf'
-            
-//             onChange={(event)=>OnFileSelect(event)}/>
-           
-//           </div>
-//           <div className='mt-2'>
-//             <label>File Name *</label>
-//             <Input placeholder="File Name" onChange={(e)=>setFileName(e.target.value)}/>
-//           </div>
-          
-//         </div>
-//       </DialogDescription>
-//     </DialogHeader>
-//      <DialogFooter className="sm:justify-end">
-//           <DialogClose asChild>
-//             <Button type="button" variant="secondary">
-//               Close
-//             </Button>
-//           </DialogClose>
-//           <Button onClick={OnUpload} disabled={loading}>
-//             {loading?
-//                <Loader2Icon className='animate-spin'/>:'Upload'
-//             }
-//             </Button>
-//         </DialogFooter>
-//   </DialogContent>
-// </Dialog>
-//   )
-// }
-
-// export default UploadPdfDialog
-
 "use client";
 import React, { useState } from "react";
 import {
@@ -140,12 +13,49 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAction, useMutation } from "convex/react";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, ShieldCheck, Shield } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import uuid4 from "uuid4";
 import { useUser } from "@clerk/nextjs";
-import axios from "axios";
 import { toast } from "sonner";
+import { usePrivacy } from "@/components/SolanaProvider";
+import { encrypt } from "@/lib/encryption";
+
+/**
+ * Parse a PDF File object entirely in the browser.
+ * Returns a single string of all page text.
+ * Uses dynamic import to avoid pdfjs-dist crashing during webpack bundling.
+ */
+async function parsePdfInBrowser(file) {
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => item.str).join(" ");
+    fullText += pageText + " ";
+  }
+  return fullText.trim();
+}
+
+/**
+ * Split text into overlapping chunks (client-side version of
+ * RecursiveCharacterTextSplitter).
+ */
+function splitText(text, chunkSize = 100, overlap = 20) {
+  const chunks = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length);
+    chunks.push(text.slice(start, end));
+    start += chunkSize - overlap;
+  }
+  return chunks;
+}
 
 function UploadPdfDialog({ children, isMaxFile }) {
   const generateUploadUrl = useMutation(api.fileStorage.generateUploadUrl);
@@ -153,10 +63,24 @@ function UploadPdfDialog({ children, isMaxFile }) {
   const getFileUrl = useMutation(api.fileStorage.getFileUrl);
   const embeddDocument = useAction(api.myAction.ingest);
   const { user } = useUser();
+  const { aesKey, isPrivacyActive } = usePrivacy();
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
   const [open, setOpen] = useState(false);
+
+  const resetState = () => {
+    setFile(null);
+    setFileName("");
+    setLoading(false);
+  };
+
+  const handleOpenChange = (val) => {
+    if (!loading) {
+      setOpen(val);
+      if (!val) resetState();
+    }
+  };
 
   const OnFileSelect = (event) => {
     setFile(event.target.files[0]);
@@ -165,38 +89,69 @@ function UploadPdfDialog({ children, isMaxFile }) {
   const OnUpload = async () => {
     setLoading(true);
 
-    const postUrl = await generateUploadUrl();
-    const result = await fetch(postUrl, {
-      method: "POST",
-      headers: { "Content-Type": file?.type },
-      body: file,
-    });
-    const { storageId } = await result.json();
-    const fileId = uuid4();
-    const fileUrl = await getFileUrl({ storageId });
+    // ── Phase 1: Upload PDF to storage & save DB record ───────────────────────
+    // The dialog closes as soon as this succeeds. Embedding runs afterwards.
+    let fileId;
+    try {
+      const postUrl = await generateUploadUrl();
+      const result = await fetch(postUrl, {
+        method: "POST",
+        headers: { "Content-Type": file?.type },
+        body: file,
+      });
+      const { storageId } = await result.json();
+      fileId = uuid4();
+      const fileUrl = await getFileUrl({ storageId });
 
-    await addFileEntry({
-      fileId,
-      storageId,
-      fileName: fileName || "Untitled File",
-      fileUrl,
-      createdBy: user?.primaryEmailAddress?.emailAddress,
-    });
+      await addFileEntry({
+        fileId,
+        storageId,
+        fileName: fileName || "Untitled File",
+        fileUrl,
+        createdBy: user?.primaryEmailAddress?.emailAddress,
+      });
 
-    const ApiResp = await axios.get("/api/pdf-loader?pdfUrl=" + fileUrl);
-    await embeddDocument({
-      splitText: ApiResp.data.result,
-      fileId,
-    });
+      // File is saved — close the dialog right away
+      toast.success("File uploaded! Processing embeddings in background…");
+      resetState();
+      setOpen(false);
+    } catch (err) {
+      console.error("Upload error:", err);
+      toast.error("Upload failed: " + err.message);
+      setLoading(false);
+      return; // stop here; don't attempt embedding
+    }
 
-    setLoading(false);
-    setOpen(false);
+    // ── Phase 2: Parse PDF & ingest into vector store (background) ────────────
+    // Dialog is already closed. Any error here won't affect the user's file.
+    try {
+      toast("Parsing PDF and generating embeddings…");
+      const fullText = await parsePdfInBrowser(file);
+      const chunks = splitText(fullText, 100, 20);
 
-    toast("File is ready !");
+      let chunksToStore = chunks;
+      if (isPrivacyActive && aesKey) {
+        chunksToStore = await Promise.all(
+          chunks.map((chunk) => encrypt(chunk, aesKey))
+        );
+      }
+
+      await embeddDocument({ splitText: chunksToStore, fileId });
+
+      toast.success(
+        isPrivacyActive
+          ? "File is ready — encrypted with your wallet key! 🔒"
+          : "File is ready! AI search is now active."
+      );
+    } catch (err) {
+      console.error("Embedding error (file is still saved):", err);
+      toast.error("AI search unavailable for this file. The file was saved successfully.");
+    }
   };
 
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button onClick={() => setOpen(true)} disabled={isMaxFile} className="w-full">
           + Upload PDF File
@@ -215,11 +170,24 @@ function UploadPdfDialog({ children, isMaxFile }) {
                 <label>File Name *</label>
                 <Input placeholder="File Name" onChange={(e) => setFileName(e.target.value)} />
               </div>
+              {/* Privacy indicator */}
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                {isPrivacyActive ? (
+                  <span className="flex items-center gap-1 text-green-600">
+                    <ShieldCheck className="w-4 h-4" />
+                    E2E encryption active — chunks will be encrypted
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-gray-400">
+                    <Shield className="w-4 h-4" />
+                    Connect wallet & activate privacy for E2E encryption
+                  </span>
+                )}
+              </div>
             </div>
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="sm:justify-end">
-          {/* Single Close Button which also closes the dialog */}
           <DialogClose asChild>
             <Button type="button" variant="secondary">
               Close
@@ -235,4 +203,3 @@ function UploadPdfDialog({ children, isMaxFile }) {
 }
 
 export default UploadPdfDialog;
-
